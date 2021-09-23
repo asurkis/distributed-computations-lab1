@@ -4,7 +4,7 @@ static size_t pipe_pos(size_t i, size_t j) { return i * (i - 1) + 2 * j; }
 
 static int init_process(struct Self *self) {
   int *pipes_old = self->pipes;
-  self->pipes = malloc(sizeof(int) * 2 * (self->n_processes - 1));
+  self->pipes = malloc(sizeof(int) * 2 * self->n_processes);
 
   for (size_t i = 0; i < self->n_processes; ++i) {
     for (size_t j = 0; j < i; ++j) {
@@ -23,13 +23,11 @@ static int init_process(struct Self *self) {
   for (size_t i = 0; i < self->id; ++i) {
     self->pipes[2 * i + 0] = pipes_old[pipe_pos(self->id, i) + 0];
     self->pipes[2 * i + 1] = pipes_old[pipe_pos(self->id, i) + 1];
-    self->polls[i].fd = self->pipes[2 * i];
   }
 
   for (size_t i = self->id + 1; i < self->n_processes; ++i) {
     self->pipes[2 * i + 0] = pipes_old[pipe_pos(i, self->id) + 0];
     self->pipes[2 * i + 1] = pipes_old[pipe_pos(i, self->id) + 1];
-    self->polls[i - 1].fd = self->pipes[2 * i];
   }
 
   free(pipes_old);
@@ -48,32 +46,91 @@ static int deinit_process(struct Self *self) {
   }
   fflush(self->pipes_log);
   free(self->pipes);
-  free(self->polls);
   fclose(self->pipes_log);
   fclose(self->events_log);
   return 0;
 }
 
+static void log_event(struct Self *self, char *buf, size_t len) {
+  fwrite(buf, sizeof(char), len, self->events_log);
+  fflush(self->events_log);
+  fwrite(buf, sizeof(char), len, stdout);
+  fflush(stdout);
+}
+
+static int wait_for_msg_from_children(struct Self *self, Message *msg,
+                                      int16_t type) {
+  for (size_t i = 1; i < self->n_processes; ++i) {
+    if (i != self->id) {
+      int received_start = 0;
+      while (!received_start) {
+        int receive_result = receive(self, (local_id)i, msg);
+        CHK_RETCODE(receive_result);
+        received_start = msg->s_header.s_type == type;
+      }
+    }
+  }
+  return 0;
+}
+
+#define DEBUG fprintf(stderr, "%zu: [%s:%d]\n", self->id, __FILE__, __LINE__);
+
 static int run_child(struct Self *self) {
   init_process(self);
-  char buf[256];
-  switch (self->id) {
-  case 1:
-    snprintf(buf, 256, "Hello, world!");
-    write(self->pipes[2 * 2 + 1], buf, sizeof(buf));
-    break;
+  Message msg;
+  size_t len;
+  msg.s_header.s_magic = MESSAGE_MAGIC;
 
-  case 2:
-    read(self->pipes[2 * 1 + 0], buf, sizeof(buf));
-    printf("Read string: \"%s\"\n", buf);
-    break;
-  }
+  len = snprintf(msg.s_payload, sizeof(msg.s_payload), log_started_fmt,
+                 (int)self->id, (int)getpid(), (int)getppid());
+  log_event(self, msg.s_payload, len);
+
+  msg.s_header.s_local_time = self->local_time;
+  msg.s_header.s_type = STARTED;
+  msg.s_header.s_payload_len = len;
+  CHK_RETCODE(send_multicast(self, &msg));
+
+  CHK_RETCODE(wait_for_msg_from_children(self, &msg, STARTED));
+
+  len = snprintf(msg.s_payload, sizeof(msg.s_payload),
+                 log_received_all_started_fmt, (int)self->id);
+  log_event(self, msg.s_payload, len);
+
+  len = snprintf(msg.s_payload, sizeof(msg.s_payload), log_done_fmt,
+                 (int)self->id);
+  log_event(self, msg.s_payload, len);
+
+  msg.s_header.s_local_time = self->local_time;
+  msg.s_header.s_type = DONE;
+  msg.s_header.s_payload_len = len;
+  CHK_RETCODE(send_multicast(self, &msg));
+
+  CHK_RETCODE(wait_for_msg_from_children(self, &msg, DONE));
+
+  len = snprintf(msg.s_payload, sizeof(msg.s_payload),
+                 log_received_all_done_fmt, (int)self->id);
+  log_event(self, msg.s_payload, len);
+
   deinit_process(self);
   return 0;
 }
 
 static int run_parent(struct Self *self) {
   init_process(self);
+  Message msg;
+  size_t len;
+  msg.s_header.s_magic = MESSAGE_MAGIC;
+
+  CHK_RETCODE(wait_for_msg_from_children(self, &msg, STARTED));
+  len = snprintf(msg.s_payload, sizeof(msg.s_payload),
+                 log_received_all_started_fmt, (int)self->id);
+  log_event(self, msg.s_payload, len);
+
+  CHK_RETCODE(wait_for_msg_from_children(self, &msg, DONE));
+  len = snprintf(msg.s_payload, sizeof(msg.s_payload),
+                 log_received_all_done_fmt, (int)self->id);
+  log_event(self, msg.s_payload, len);
+
   for (size_t i = 1; i < self->n_processes; ++i) {
     pid_t pid = wait(NULL);
     CHK_ERRNO(pid);
@@ -102,9 +159,7 @@ int main(int argc, char **argv) {
   }
   fflush(self.pipes_log);
 
-  self.polls = malloc(sizeof(struct pollfd) * (self.n_processes - 1));
-  for (size_t i = 1; i < self.n_processes; ++i)
-    self.polls[i].events = POLLIN;
+  self.local_time = 0;
 
   for (size_t id = 1; id < self.n_processes; ++id) {
     pid_t pid = fork();

@@ -6,7 +6,6 @@
 #include "pa1.h"
 #include <errno.h>
 #include <inttypes.h>
-#include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,8 +16,10 @@
 #define CHK_RETCODE(code)                                                      \
   do {                                                                         \
     intmax_t result__ = code;                                                  \
-    if (result__ < 0)                                                          \
+    if (result__ < 0) {                                                        \
+      fprintf(stderr, "[%s:%d] %s\n", __FILE__, __LINE__, #code);              \
       return result__;                                                         \
+    }                                                                          \
   } while (0)
 
 #define CHK_ERRNO(code)                                                        \
@@ -44,7 +45,6 @@ struct Self {
 
     Pipe between I and J where I < J is at (J * (J - 1) / 2 + I) */
   int *pipes;
-  struct pollfd *polls;
   FILE *events_log;
   FILE *pipes_log;
 
