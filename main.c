@@ -1,82 +1,104 @@
-#include "common.h"
-#include "ipc.h"
-#include "pa1.h"
-#include <errno.h>
-#include <inttypes.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "main.h"
 
-#define CHK_RETCODE(code)                                                      \
-  do {                                                                         \
-    intmax_t result__ = code;                                                  \
-    if (result__ < 0)                                                          \
-      return result__;                                                         \
-  } while (0)
+static size_t pipe_pos(size_t i, size_t j) { return i * (i - 1) + 2 * j; }
 
-#define CHK_ERRNO(code)                                                        \
-  do {                                                                         \
-    intmax_t result__ = code;                                                  \
-    if (result__ < 0) {                                                        \
-      perror("[" __FILE__ "] " #code);                                         \
-      fprintf(stderr, "[%s:%d] errno = %d", __FILE__, __LINE__, errno);        \
-      return result__;                                                         \
-    }                                                                          \
-  } while (0)
+static int remove_redundant_pipes(struct Self *self) {
+  int *pipes_old = self->pipes;
+  self->pipes = malloc(sizeof(int) * 2 * (self->n_processes - 1));
 
-size_t n_processes;
-pid_t *children_pidx;
+  for (size_t i = 0; i < self->n_processes; ++i) {
+    for (size_t j = 0; j < i; ++j) {
+      if (i != self->id && j != self->id) {
+        CHK_ERRNO(close(pipes_old[pipe_pos(i, j) + 0]));
+        CHK_ERRNO(close(pipes_old[pipe_pos(i, j) + 1]));
+      }
+    }
+  }
 
-/* K-th row contains pipes for processes K and from 0 to (K - 1)
-   Therefore it starts at index (K * (K - 1) / 2)
-   (0 => no pipes
-    1 => 0
-    2 => 1, 2
-    3 => 3, 4, 5
-    4 => 6, 7, 8, 9
-    ...)
-   Times 2 for pipes of both types
+  for (size_t i = 0; i < self->id; ++i) {
+    self->pipes[2 * i + 0] = pipes_old[pipe_pos(self->id, i) + 0];
+    self->pipes[2 * i + 1] = pipes_old[pipe_pos(self->id, i) + 1];
+    self->polls[i].fd = self->pipes[2 * i];
+  }
 
-   Pipe between I and J where I < J is at (J * (J - 1) / 2 + I) */
-int *pipes;
+  for (size_t i = self->id + 1; i < self->n_processes; ++i) {
+    self->pipes[2 * i + 0] = pipes_old[pipe_pos(i, self->id) + 0];
+    self->pipes[2 * i + 1] = pipes_old[pipe_pos(i, self->id) + 1];
+    self->polls[i - 1].fd = self->pipes[2 * i];
+  }
 
-int run_child(size_t my_id) {
-  free(children_pidx);
+  free(pipes_old);
+  self->pipes[2 * self->id + 0] = -1;
+  self->pipes[2 * self->id + 1] = -1;
   return 0;
 }
 
-int run_parent(size_t my_id) {
-  for (size_t i = 1; i < n_processes; ++i) {
+static int close_active_pipes(struct Self *self) {
+  for (size_t i = 0; i < 2 * self->n_processes; ++i) {
+    int p = self->pipes[i];
+    if (p != -1) {
+      CHK_ERRNO(close(p));
+    }
+  }
+  free(self->pipes);
+  free(self->polls);
+  return 0;
+}
+
+static int run_child(struct Self *self) {
+  remove_redundant_pipes(self);
+  char buf[256];
+  switch (self->id) {
+  case 1:
+    snprintf(buf, 256, "Hello, world!");
+    write(self->pipes[2 * 2 + 1], buf, sizeof(buf));
+    break;
+
+  case 2:
+    read(self->pipes[2 * 1 + 0], buf, sizeof(buf));
+    printf("Read string: \"%s\"\n", buf);
+    break;
+  }
+  close_active_pipes(self);
+  return 0;
+}
+
+static int run_parent(struct Self *self) {
+  remove_redundant_pipes(self);
+  for (size_t i = 1; i < self->n_processes; ++i) {
     pid_t pid = wait(NULL);
     CHK_ERRNO(pid);
-    printf("Child (pid %d) terminated\n", pid);
   }
+  close_active_pipes(self);
   return 0;
 }
 
+struct Self self;
+
 int main(int argc, char **argv) {
-  if (argc < 3 || sscanf(argv[2], "%zu", &n_processes) != 1 ||
-      n_processes < 1) {
+  if (argc < 3 || sscanf(argv[2], "%zu", &self.n_processes) != 1 ||
+      self.n_processes < 1) {
     printf("Usage: %s -p <number of processes>\n", argv[0]);
     return 0;
   }
 
-  pipes = malloc(sizeof(int) * n_processes * (n_processes - 1));
-  for (size_t i = 0; 2 * i < n_processes * (n_processes - 1); ++i) {
-    CHK_ERRNO(pipe(&pipes[2 * i]));
-  }
+  self.pipes = malloc(sizeof(int) * self.n_processes * (self.n_processes - 1));
+  for (size_t i = 0; 2 * i < self.n_processes * (self.n_processes - 1); ++i)
+    CHK_ERRNO(pipe(&self.pipes[2 * i]));
 
-  children_pidx = malloc(sizeof(pid_t) * (n_processes - 1));
-  for (size_t id = 1; id < n_processes; ++id) {
-    pid_t pid = children_pidx[id - 1] = fork();
+  self.polls = malloc(sizeof(struct pollfd) * (self.n_processes - 1));
+  for (size_t i = 1; i < self.n_processes; ++i)
+    self.polls[i].events = POLLIN;
+
+  for (size_t id = 1; id < self.n_processes; ++id) {
+    pid_t pid = fork();
     CHK_ERRNO(pid);
-    if (!pid)
-      return run_child(id);
-    printf("Child (pid %d) started\n", pid);
+    if (!pid) {
+      self.id = id;
+      return run_child(&self);
+    }
   }
 
-  return run_parent(0);
+  self.id = 0;
+  return run_parent(&self);
 }
