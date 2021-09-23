@@ -2,7 +2,7 @@
 
 static size_t pipe_pos(size_t i, size_t j) { return i * (i - 1) + 2 * j; }
 
-static int remove_redundant_pipes(struct Self *self) {
+static int init_process(struct Self *self) {
   int *pipes_old = self->pipes;
   self->pipes = malloc(sizeof(int) * 2 * (self->n_processes - 1));
 
@@ -11,9 +11,14 @@ static int remove_redundant_pipes(struct Self *self) {
       if (i != self->id && j != self->id) {
         CHK_ERRNO(close(pipes_old[pipe_pos(i, j) + 0]));
         CHK_ERRNO(close(pipes_old[pipe_pos(i, j) + 1]));
+        fprintf(self->pipes_log, "Process %zu closed pipe %d\n", self->id,
+                pipes_old[pipe_pos(i, j) + 0]);
+        fprintf(self->pipes_log, "Process %zu closed pipe %d\n", self->id,
+                pipes_old[pipe_pos(i, j) + 1]);
       }
     }
   }
+  fflush(self->pipes_log);
 
   for (size_t i = 0; i < self->id; ++i) {
     self->pipes[2 * i + 0] = pipes_old[pipe_pos(self->id, i) + 0];
@@ -33,20 +38,24 @@ static int remove_redundant_pipes(struct Self *self) {
   return 0;
 }
 
-static int close_active_pipes(struct Self *self) {
+static int deinit_process(struct Self *self) {
   for (size_t i = 0; i < 2 * self->n_processes; ++i) {
     int p = self->pipes[i];
     if (p != -1) {
       CHK_ERRNO(close(p));
+      fprintf(self->pipes_log, "Process %zu closed pipe %d\n", self->id, p);
     }
   }
+  fflush(self->pipes_log);
   free(self->pipes);
   free(self->polls);
+  fclose(self->pipes_log);
+  fclose(self->events_log);
   return 0;
 }
 
 static int run_child(struct Self *self) {
-  remove_redundant_pipes(self);
+  init_process(self);
   char buf[256];
   switch (self->id) {
   case 1:
@@ -59,17 +68,17 @@ static int run_child(struct Self *self) {
     printf("Read string: \"%s\"\n", buf);
     break;
   }
-  close_active_pipes(self);
+  deinit_process(self);
   return 0;
 }
 
 static int run_parent(struct Self *self) {
-  remove_redundant_pipes(self);
+  init_process(self);
   for (size_t i = 1; i < self->n_processes; ++i) {
     pid_t pid = wait(NULL);
     CHK_ERRNO(pid);
   }
-  close_active_pipes(self);
+  deinit_process(self);
   return 0;
 }
 
@@ -82,9 +91,16 @@ int main(int argc, char **argv) {
     return 0;
   }
 
+  self.pipes_log = fopen(pipes_log, "w");
+  self.events_log = fopen(events_log, "w");
+
   self.pipes = malloc(sizeof(int) * self.n_processes * (self.n_processes - 1));
-  for (size_t i = 0; 2 * i < self.n_processes * (self.n_processes - 1); ++i)
+  for (size_t i = 0; 2 * i < self.n_processes * (self.n_processes - 1); ++i) {
     CHK_ERRNO(pipe(&self.pipes[2 * i]));
+    fprintf(self.pipes_log, "Open pipe %zu: rfd=%d, wfd=%d\n", i,
+            self.pipes[2 * i + 0], self.pipes[2 * i + 1]);
+  }
+  fflush(self.pipes_log);
 
   self.polls = malloc(sizeof(struct pollfd) * (self.n_processes - 1));
   for (size_t i = 1; i < self.n_processes; ++i)

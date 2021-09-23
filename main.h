@@ -45,9 +45,13 @@ struct Self {
     Pipe between I and J where I < J is at (J * (J - 1) / 2 + I) */
   int *pipes;
   struct pollfd *polls;
+  FILE *events_log;
+  FILE *pipes_log;
 
   size_t id;
   size_t n_processes;
+
+  timestamp_t local_time;
 };
 
 #endif
