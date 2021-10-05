@@ -46,6 +46,10 @@ int send(void *self_, local_id dst_, Message const *msg) {
     return -1;
   }
 
+  fprintf(self->debug_log, "Sent message of type %d to %d\n",
+          msg->s_header.s_type, (int)dst_);
+  fflush(self->debug_log);
+
   self->local_time++;
   return 0;
 }
@@ -67,6 +71,10 @@ int receive(void *self_, local_id from, Message *msg) {
   CHK_RETCODE(read_result);
   if (!read_result)
     return -1;
+
+  fprintf(self->debug_log, "Received message of type %d from %d\n",
+          msg->s_header.s_type, (int)from);
+  fflush(self->debug_log);
 
   switch (msg->s_header.s_type) {
   case STARTED:

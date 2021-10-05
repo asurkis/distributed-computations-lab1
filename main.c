@@ -15,6 +15,7 @@ static int init_process(struct Self *self) {
         fprintf(self->debug_log,
                 "i=%zu, j=%zu, pipe_pos=%zu, closing %d and %d\n", i, j,
                 pipe_pos(i, j), to_close[0], to_close[1]);
+        fflush(self->debug_log);
         CHK_ERRNO(close(to_close[0]));
         CHK_ERRNO(close(to_close[1]));
       }
@@ -30,9 +31,13 @@ static int init_process(struct Self *self) {
       self->pipes[2 * i + k] = pipes_old[pipe_pos(i, self->id) + k];
   }
   fprintf(self->debug_log, "Pipes for process:\n");
-  for (size_t i = 0; i < self->n_processes; ++i)
-    fprintf(self->debug_log, "with process %zu: rfd=%d wfd=%d\n", i,
+  fflush(self->debug_log);
+
+  for (size_t i = 0; i < self->n_processes; ++i) {
+    fprintf(self->debug_log, "Pipes with process %zu: rfd=%d wfd=%d\n", i,
             self->pipes[2 * i + 0], self->pipes[2 * i + 1]);
+    fflush(self->debug_log);
+  }
   free(pipes_old);
   return 0;
 }
@@ -41,8 +46,10 @@ static int deinit_process(struct Self *self) {
   for (size_t i = 0; i < self->n_processes; ++i) {
     if (i != self->id) {
       int *to_close = &self->pipes[2 * i];
-      fprintf(self->debug_log, "to process %zu, closing %d and %d\n", i,
+      fprintf(self->debug_log, "Closing pipes with process %zu: rfd=%d wfd=%d\n", i,
               to_close[0], to_close[1]);
+      fflush(self->debug_log);
+
       CHK_ERRNO(close(to_close[0]));
       CHK_ERRNO(close(to_close[1]));
     }
@@ -56,18 +63,20 @@ static int deinit_process(struct Self *self) {
 
 static int wait_for_message(struct Self *self, size_t from, Message *msg,
                             MessageType type) {
+  fprintf(self->debug_log, "Waiting for message of type %d from %zu\n", type,
+          from);
+  fflush(self->debug_log);
   do {
     CHK_RETCODE(receive(self, (local_id)from, msg));
-    fprintf(self->debug_log, "Received message of type %d from %zu\n",
-            msg->s_header.s_type, from);
   } while (msg->s_header.s_type != type);
   return 0;
 }
 
 static int run_child(struct Self *self) {
   Message msg;
-
   CHK_RETCODE(init_process(self));
+
+  CHK_RETCODE(wait_for_message(self, 0, &msg, STARTED));
 
   msg.s_header.s_magic = MESSAGE_MAGIC;
   msg.s_header.s_payload_len = 0;
@@ -75,11 +84,18 @@ static int run_child(struct Self *self) {
   msg.s_header.s_type = STARTED;
   CHK_RETCODE(send_multicast(self, &msg));
 
+  fprintf(self->events_log, log_started_fmt, (int)self->id, (int)getpid(),
+          (int)getppid());
+  fflush(self->events_log);
+
   for (size_t i = 1; i < self->n_processes; ++i) {
     if (i != self->id) {
       CHK_RETCODE(wait_for_message(self, i, &msg, STARTED));
     }
   }
+
+  fprintf(self->events_log, log_received_all_started_fmt, (int)self->id);
+  fflush(self->events_log);
 
   msg.s_header.s_magic = MESSAGE_MAGIC;
   msg.s_header.s_payload_len = 0;
@@ -87,11 +103,17 @@ static int run_child(struct Self *self) {
   msg.s_header.s_type = DONE;
   CHK_RETCODE(send_multicast(self, &msg));
 
+  fprintf(self->events_log, log_done_fmt, (int)self->id);
+  fflush(self->events_log);
+
   for (size_t i = 1; i < self->n_processes; ++i) {
     if (i != self->id) {
       CHK_RETCODE(wait_for_message(self, i, &msg, DONE));
     }
   }
+
+  fprintf(self->events_log, log_received_all_done_fmt, (int)self->id);
+  fflush(self->events_log);
 
   CHK_RETCODE(deinit_process(self));
   return 0;
@@ -101,10 +123,22 @@ static int run_parent(struct Self *self) {
   Message msg;
   CHK_RETCODE(init_process(self));
 
+  msg.s_header.s_magic = MESSAGE_MAGIC;
+  msg.s_header.s_payload_len = 0;
+  msg.s_header.s_local_time = 0;
+  msg.s_header.s_type = STARTED;
+  CHK_RETCODE(send_multicast(self, &msg));
+
   for (size_t i = 1; i < self->n_processes; ++i)
     CHK_RETCODE(wait_for_message(self, i, &msg, STARTED));
+  fprintf(self->events_log, log_received_all_started_fmt, (int)self->id);
+  fflush(self->events_log);
+
   for (size_t i = 1; i < self->n_processes; ++i)
     CHK_RETCODE(wait_for_message(self, i, &msg, DONE));
+  fprintf(self->events_log, log_received_all_done_fmt, (int)self->id);
+  fflush(self->events_log);
+
   for (size_t i = 1; i < self->n_processes; ++i)
     wait(NULL);
   DEBUG
