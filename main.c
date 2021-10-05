@@ -86,11 +86,11 @@ static int run_child(struct Self *self) {
           (int)getppid());
   fflush(self->events_log);
 
-  for (size_t i = 1; i < self->n_processes; ++i) {
+  /* for (size_t i = 1; i < self->n_processes; ++i) {
     if (i != self->id) {
       CHK_RETCODE(wait_for_message(self, i, &msg, STARTED));
     }
-  }
+  } */
 
   fprintf(self->events_log, log_received_all_started_fmt, (int)self->id);
   fflush(self->events_log);
