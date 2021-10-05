@@ -24,12 +24,13 @@ static int read_repeat(int fd, char *buf, size_t size) {
 
 int send(void *self_, local_id dst_, Message const *msg) {
   struct Self *self = self_;
+  write_repeat(self->pipes[2 * dst_ + 1], (char *)&msg->s_header,
+               sizeof(MessageHeader));
   switch (msg->s_header.s_type) {
   case STARTED:
   case DONE:
-    CHK_RETCODE(
-        write_repeat(self->pipes[2 * dst_ + 1], (char *)msg,
-                     sizeof(MessageHeader) + msg->s_header.s_payload_len));
+    // CHK_RETCODE(write_repeat(self->pipes[2 * dst_ + 1], msg->s_payload,
+    //                          msg->s_header.s_payload_len));
     break;
 
   case ACK:
@@ -37,8 +38,6 @@ int send(void *self_, local_id dst_, Message const *msg) {
   case CS_REQUEST:
   case CS_REPLY:
   case CS_RELEASE:
-    CHK_RETCODE(write_repeat(self->pipes[2 * dst_ + 1], (char *)&msg->s_header,
-                             sizeof(MessageHeader)));
     break;
 
   case TRANSFER:
@@ -72,11 +71,11 @@ int receive(void *self_, local_id from, Message *msg) {
   switch (msg->s_header.s_type) {
   case STARTED:
   case DONE:
-    read_result = read_repeat(self->pipes[2 * from], msg->s_payload,
-                              msg->s_header.s_payload_len);
-    CHK_RETCODE(read_result);
-    if (!read_result)
-      return -1;
+    // read_result = read_repeat(self->pipes[2 * from], msg->s_payload,
+    //                           msg->s_header.s_payload_len);
+    // CHK_RETCODE(read_result);
+    // if (!read_result)
+    //   return -1;
     break;
 
   case ACK:

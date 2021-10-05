@@ -54,17 +54,57 @@ static int deinit_process(struct Self *self) {
   return 0;
 }
 
+static int wait_for_message(struct Self *self, size_t from, Message *msg,
+                            MessageType type) {
+  do {
+    CHK_RETCODE(receive(self, (local_id)from, msg));
+    fprintf(self->debug_log, "Received message of type %d from %zu\n",
+            msg->s_header.s_type, from);
+  } while (msg->s_header.s_type != type);
+  return 0;
+}
+
 static int run_child(struct Self *self) {
+  Message msg;
+
   CHK_RETCODE(init_process(self));
+
+  msg.s_header.s_magic = MESSAGE_MAGIC;
+  msg.s_header.s_payload_len = 0;
+  msg.s_header.s_local_time = 0;
+  msg.s_header.s_type = STARTED;
+  CHK_RETCODE(send_multicast(self, &msg));
+
+  for (size_t i = 1; i < self->n_processes; ++i) {
+    if (i != self->id) {
+      CHK_RETCODE(wait_for_message(self, i, &msg, STARTED));
+    }
+  }
+
+  msg.s_header.s_magic = MESSAGE_MAGIC;
+  msg.s_header.s_payload_len = 0;
+  msg.s_header.s_local_time = 0;
+  msg.s_header.s_type = DONE;
+  CHK_RETCODE(send_multicast(self, &msg));
+
+  for (size_t i = 1; i < self->n_processes; ++i) {
+    if (i != self->id) {
+      CHK_RETCODE(wait_for_message(self, i, &msg, DONE));
+    }
+  }
 
   CHK_RETCODE(deinit_process(self));
   return 0;
 }
 
 static int run_parent(struct Self *self) {
+  Message msg;
   CHK_RETCODE(init_process(self));
 
-  DEBUG
+  for (size_t i = 1; i < self->n_processes; ++i)
+    CHK_RETCODE(wait_for_message(self, i, &msg, STARTED));
+  for (size_t i = 1; i < self->n_processes; ++i)
+    CHK_RETCODE(wait_for_message(self, i, &msg, DONE));
   for (size_t i = 1; i < self->n_processes; ++i)
     wait(NULL);
   DEBUG
