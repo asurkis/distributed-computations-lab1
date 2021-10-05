@@ -3,3 +3,6 @@ build:
 
 run: build
 	./a.out -p 3
+
+clean:
+	rm a.out *.log
