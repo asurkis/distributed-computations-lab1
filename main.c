@@ -64,6 +64,11 @@ static int run_child(struct Self *self) {
 static int run_parent(struct Self *self) {
   CHK_RETCODE(init_process(self));
 
+  DEBUG
+  for (size_t i = 1; i < self->n_processes; ++i)
+    wait(NULL);
+  DEBUG
+
   CHK_RETCODE(deinit_process(self));
   return 0;
 }

@@ -14,7 +14,7 @@
 #include <unistd.h>
 
 #define DEBUG                                                                  \
-  fprintf(self->debug_log, "[%s:%d]\n", self->id, __FILE__, __LINE__);
+  fprintf(self->debug_log, "[%s:%d]\n", __FILE__, __LINE__);
 
 #define CHK_RETCODE(code)                                                      \
   do {                                                                         \
