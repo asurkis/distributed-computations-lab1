@@ -13,6 +13,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define DEBUG                                                                  \
+  fprintf(self->debug_log, "[%s:%d]\n", self->id, __FILE__, __LINE__);
+
 #define CHK_RETCODE(code)                                                      \
   do {                                                                         \
     intmax_t result__ = code;                                                  \
@@ -47,6 +50,7 @@ struct Self {
   int *pipes;
   FILE *events_log;
   FILE *pipes_log;
+  FILE *debug_log;
 
   size_t id;
   size_t n_processes;
