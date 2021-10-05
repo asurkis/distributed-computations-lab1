@@ -56,12 +56,14 @@ static int deinit_process(struct Self *self) {
 
 static int run_child(struct Self *self) {
   CHK_RETCODE(init_process(self));
+
   CHK_RETCODE(deinit_process(self));
   return 0;
 }
 
 static int run_parent(struct Self *self) {
   CHK_RETCODE(init_process(self));
+
   CHK_RETCODE(deinit_process(self));
   return 0;
 }
@@ -69,8 +71,8 @@ static int run_parent(struct Self *self) {
 struct Self self;
 
 int main(int argc, char **argv) {
-  if (argc < 3 || sscanf(argv[2], "%zu", &self.n_processes) != 1 ||
-      self.n_processes < 1) {
+  size_t n_children;
+  if (argc < 3 || sscanf(argv[2], "%zu", &n_children) != 1) {
     printf("Usage: %s -p <number of processes>\n", argv[0]);
     return 0;
   }
@@ -78,8 +80,9 @@ int main(int argc, char **argv) {
   self.pipes_log = fopen(pipes_log, "w");
   self.events_log = fopen(events_log, "w");
 
-  self.pipes = malloc(sizeof(int) * self.n_processes * (self.n_processes - 1));
-  for (size_t i = 0; 2 * i < self.n_processes * (self.n_processes - 1); ++i) {
+  self.n_processes = n_children + 1;
+  self.pipes = malloc(sizeof(int) * self.n_processes * n_children);
+  for (size_t i = 0; 2 * i < self.n_processes * n_children; ++i) {
     CHK_ERRNO(pipe(&self.pipes[2 * i]));
     fprintf(self.pipes_log, "Open pipe %zu: rfd=%d, wfd=%d\n", i,
             self.pipes[2 * i + 0], self.pipes[2 * i + 1]);
