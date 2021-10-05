@@ -76,8 +76,6 @@ static int run_child(struct Self *self) {
   Message msg;
   CHK_RETCODE(init_process(self));
 
-  CHK_RETCODE(wait_for_message(self, 0, &msg, STARTED));
-
   msg.s_header.s_magic = MESSAGE_MAGIC;
   msg.s_header.s_payload_len = 0;
   msg.s_header.s_local_time = 0;
@@ -88,11 +86,11 @@ static int run_child(struct Self *self) {
           (int)getppid());
   fflush(self->events_log);
 
-  for (size_t i = 1; i < self->n_processes; ++i) {
+  /* for (size_t i = 1; i < self->n_processes; ++i) {
     if (i != self->id) {
       CHK_RETCODE(wait_for_message(self, i, &msg, STARTED));
     }
-  }
+  } */
 
   fprintf(self->events_log, log_received_all_started_fmt, (int)self->id);
   fflush(self->events_log);
@@ -122,12 +120,6 @@ static int run_child(struct Self *self) {
 static int run_parent(struct Self *self) {
   Message msg;
   CHK_RETCODE(init_process(self));
-
-  msg.s_header.s_magic = MESSAGE_MAGIC;
-  msg.s_header.s_payload_len = 0;
-  msg.s_header.s_local_time = 0;
-  msg.s_header.s_type = STARTED;
-  CHK_RETCODE(send_multicast(self, &msg));
 
   for (size_t i = 1; i < self->n_processes; ++i)
     CHK_RETCODE(wait_for_message(self, i, &msg, STARTED));
