@@ -50,15 +50,14 @@ static int wait_for_message(struct Self *self, size_t from, Message *msg,
 
 static int run_child(struct Self *self) {
   Message msg;
-  size_t written;
   CHK_RETCODE(init_process(self));
 
   msg.s_header.s_magic = MESSAGE_MAGIC;
   msg.s_header.s_local_time = 0;
   msg.s_header.s_type = STARTED;
-  written = snprintf(msg.s_payload, MAX_PAYLOAD_LEN, log_started_fmt,
-                     (int)self->id, (int)getpid(), (int)getppid());
-  msg.s_header.s_payload_len = written - 1;
+  msg.s_header.s_payload_len =
+      snprintf(msg.s_payload, MAX_PAYLOAD_LEN, log_started_fmt, (int)self->id,
+               (int)getpid(), (int)getppid());
   fputs(msg.s_payload, self->events_log);
   CHK_RETCODE(send_multicast(self, &msg));
 
@@ -71,9 +70,9 @@ static int run_child(struct Self *self) {
   msg.s_header.s_magic = MESSAGE_MAGIC;
   msg.s_header.s_local_time = 0;
   msg.s_header.s_type = DONE;
-  written = snprintf(msg.s_payload, MAX_PAYLOAD_LEN,
-                     log_received_all_started_fmt, (int)self->id);
-  msg.s_header.s_payload_len = written - 1;
+  msg.s_header.s_payload_len =
+      snprintf(msg.s_payload, MAX_PAYLOAD_LEN, log_received_all_started_fmt,
+               (int)self->id);
   fputs(msg.s_payload, self->events_log);
   CHK_RETCODE(send_multicast(self, &msg));
 
