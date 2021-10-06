@@ -67,16 +67,15 @@ static int run_child(struct Self *self) {
     }
   }
 
+  fprintf(self->events_log, log_received_all_started_fmt, (int)self->id);
+
   msg.s_header.s_magic = MESSAGE_MAGIC;
   msg.s_header.s_local_time = 0;
   msg.s_header.s_type = DONE;
   msg.s_header.s_payload_len =
-      snprintf(msg.s_payload, MAX_PAYLOAD_LEN, log_received_all_started_fmt,
-               (int)self->id);
+      snprintf(msg.s_payload, MAX_PAYLOAD_LEN, log_done_fmt, (int)self->id);
   fputs(msg.s_payload, self->events_log);
   CHK_RETCODE(send_multicast(self, &msg));
-
-  fprintf(self->events_log, log_done_fmt, (int)self->id);
 
   for (size_t i = 1; i < self->n_processes; ++i) {
     if (i != self->id) {
