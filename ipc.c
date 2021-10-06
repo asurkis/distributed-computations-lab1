@@ -39,9 +39,6 @@ int send(void *self_, local_id dst_, Message const *msg) {
 
   case ACK:
   case STOP:
-  case CS_REQUEST:
-  case CS_REPLY:
-  case CS_RELEASE:
     break;
 
   case TRANSFER:
@@ -79,9 +76,6 @@ int receive(void *self_, local_id from, Message *msg) {
 
   case ACK:
   case STOP:
-  case CS_REQUEST:
-  case CS_REPLY:
-  case CS_RELEASE:
     break;
 
   case TRANSFER:
