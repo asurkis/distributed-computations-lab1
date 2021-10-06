@@ -39,17 +39,6 @@
   } while (0)
 
 struct Self {
-  /* K-th row contains pipes for processes K and from 0 to (K - 1)
-    Therefore it starts at index (K * (K - 1) / 2)
-        0 => no pipes
-        1 => 0
-        2 => 1, 2
-        3 => 3, 4, 5
-        4 => 6, 7, 8, 9
-        ...
-    Times 2 for pipes of both types
-
-    Pipe between I and J where I < J is at (J * (J - 1) / 2 + I) */
   int *pipes;
   FILE *events_log;
   FILE *pipes_log;
