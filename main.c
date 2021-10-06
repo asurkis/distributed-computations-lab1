@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
   }
 
   self.pipes_log = fopen(pipes_log, "w");
-  self.events_log = fopen(events_log, "w");
+  self.events_log = fopen(events_log, "a");
 
   self.n_processes = n_children + 1;
   self.pipes = malloc(2 * sizeof(int) * self.n_processes * self.n_processes);
