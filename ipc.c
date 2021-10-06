@@ -4,6 +4,8 @@ static int write_repeat(int fd, char const *buf, size_t size) {
   while (size) {
     ssize_t shift = write(fd, buf, size);
     CHK_ERRNO(shift);
+    if (!shift)
+      return -1;
     buf += shift;
     size -= shift;
   }
@@ -15,7 +17,7 @@ static int read_repeat(int fd, char *buf, size_t size) {
     ssize_t shift = read(fd, buf, size);
     CHK_ERRNO(shift);
     if (!shift)
-      return 0;
+      return -1;
     buf += shift;
     size -= shift;
   }
@@ -24,13 +26,15 @@ static int read_repeat(int fd, char *buf, size_t size) {
 
 int send(void *self_, local_id dst_, Message const *msg) {
   struct Self *self = self_;
-  write_repeat(self->pipes[2 * dst_ + 1], (char *)&msg->s_header,
-               sizeof(MessageHeader));
+  int fd = self->pipes[2 * (self->id * self->n_processes + dst_) + 1];
+  int retcode = write_repeat(fd, (char *)&msg->s_header, sizeof(MessageHeader));
+  CHK_RETCODE(retcode);
+
   switch (msg->s_header.s_type) {
   case STARTED:
   case DONE:
-    // CHK_RETCODE(write_repeat(self->pipes[2 * dst_ + 1], msg->s_payload,
-    //                          msg->s_header.s_payload_len));
+    retcode = write_repeat(fd, msg->s_payload, msg->s_header.s_payload_len);
+    CHK_RETCODE(retcode);
     break;
 
   case ACK:
@@ -45,10 +49,6 @@ int send(void *self_, local_id dst_, Message const *msg) {
   default:
     return -1;
   }
-
-  fprintf(self->debug_log, "Sent message of type %d to %d\n",
-          msg->s_header.s_type, (int)dst_);
-  fflush(self->debug_log);
 
   self->local_time++;
   return 0;
@@ -66,24 +66,15 @@ int send_multicast(void *self_, Message const *msg) {
 
 int receive(void *self_, local_id from, Message *msg) {
   struct Self *self = self_;
-  int read_result = read_repeat(self->pipes[2 * from], (char *)&msg->s_header,
-                                sizeof(MessageHeader));
-  CHK_RETCODE(read_result);
-  if (!read_result)
-    return -1;
-
-  fprintf(self->debug_log, "Received message of type %d from %d\n",
-          msg->s_header.s_type, (int)from);
-  fflush(self->debug_log);
+  int fd = self->pipes[2 * (from * self->n_processes + self->id)];
+  int retcode = read_repeat(fd, (char *)&msg->s_header, sizeof(MessageHeader));
+  CHK_RETCODE(retcode);
 
   switch (msg->s_header.s_type) {
   case STARTED:
   case DONE:
-    // read_result = read_repeat(self->pipes[2 * from], msg->s_payload,
-    //                           msg->s_header.s_payload_len);
-    // CHK_RETCODE(read_result);
-    // if (!read_result)
-    //   return -1;
+    retcode = read_repeat(fd, msg->s_payload, msg->s_header.s_payload_len);
+    CHK_RETCODE(retcode);
     break;
 
   case ACK:

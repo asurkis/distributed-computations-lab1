@@ -14,7 +14,10 @@
 #include <unistd.h>
 
 #define DEBUG                                                                  \
-  fprintf(self->debug_log, "[%s:%d]\n", __FILE__, __LINE__);
+  do {                                                                         \
+    fprintf(stderr, "Process %zu [%s:%d]\n", self->id, __FILE__, __LINE__);    \
+    fflush(stderr);                                                            \
+  } while (0)
 
 #define CHK_RETCODE(code)                                                      \
   do {                                                                         \
@@ -30,7 +33,7 @@
     intmax_t result__ = code;                                                  \
     if (result__ < 0) {                                                        \
       perror("[" __FILE__ "] " #code);                                         \
-      fprintf(stderr, "[%s:%d] errno = %d", __FILE__, __LINE__, errno);        \
+      fprintf(stderr, "[%s:%d] errno = %d\n", __FILE__, __LINE__, errno);      \
       return result__;                                                         \
     }                                                                          \
   } while (0)
@@ -50,7 +53,6 @@ struct Self {
   int *pipes;
   FILE *events_log;
   FILE *pipes_log;
-  FILE *debug_log;
 
   size_t id;
   size_t n_processes;
